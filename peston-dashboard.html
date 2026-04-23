@@ -1,9 +1,11 @@
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PESTON 대시보드</title>
+  <script id="shared-data" type="application/json">null</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -12,33 +14,33 @@
 <body class="bg-slate-50">
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useMemo, useContext, createContext, useEffect, useCallback } = React;
+const { useState, useMemo, useContext, createContext, useEffect, useCallback, useRef } = React;
 
-/* ════════════════════════════════════════════════════════════
-   CONTEXTS
-════════════════════════════════════════════════════════════ */
 const RoleCtx    = createContext("viewer");
-const MembersCtx = createContext({ members:[], setMembers:()=>{} });
+const MembersCtx = createContext({ members:[], setMembers:()=>{}, memberColors:{}, setMemberColors:()=>{} });
 const useRole    = () => useContext(RoleCtx);
 const useMembers = () => useContext(MembersCtx);
 
-/* ════════════════════════════════════════════════════════════
-   CONSTANTS
-════════════════════════════════════════════════════════════ */
+/* ══ CONSTANTS ══ */
 const STAGES = ["기획","발주","생산중","입고대기","판매중"];
 const PAL = [
-  {dot:"bg-blue-500",    bd:"bg-blue-50 text-blue-700 border-blue-200"},
-  {dot:"bg-indigo-500",  bd:"bg-indigo-50 text-indigo-700 border-indigo-200"},
-  {dot:"bg-violet-500",  bd:"bg-violet-50 text-violet-700 border-violet-200"},
-  {dot:"bg-rose-500",    bd:"bg-rose-50 text-rose-700 border-rose-200"},
-  {dot:"bg-pink-500",    bd:"bg-pink-50 text-pink-700 border-pink-200"},
-  {dot:"bg-orange-500",  bd:"bg-orange-50 text-orange-700 border-orange-200"},
-  {dot:"bg-emerald-500", bd:"bg-emerald-50 text-emerald-700 border-emerald-200"},
-  {dot:"bg-amber-500",   bd:"bg-amber-50 text-amber-700 border-amber-200"},
-  {dot:"bg-teal-500",    bd:"bg-teal-50 text-teal-700 border-teal-200"},
-  {dot:"bg-cyan-500",    bd:"bg-cyan-50 text-cyan-700 border-cyan-200"},
+  {dot:"bg-blue-500",    bd:"bg-blue-50 text-blue-700 border-blue-200",    hex:"#3b82f6"},
+  {dot:"bg-indigo-500",  bd:"bg-indigo-50 text-indigo-700 border-indigo-200",  hex:"#6366f1"},
+  {dot:"bg-violet-500",  bd:"bg-violet-50 text-violet-700 border-violet-200",  hex:"#8b5cf6"},
+  {dot:"bg-rose-500",    bd:"bg-rose-50 text-rose-700 border-rose-200",    hex:"#f43f5e"},
+  {dot:"bg-pink-500",    bd:"bg-pink-50 text-pink-700 border-pink-200",    hex:"#ec4899"},
+  {dot:"bg-orange-500",  bd:"bg-orange-50 text-orange-700 border-orange-200",  hex:"#f97316"},
+  {dot:"bg-emerald-500", bd:"bg-emerald-50 text-emerald-700 border-emerald-200",hex:"#10b981"},
+  {dot:"bg-amber-500",   bd:"bg-amber-50 text-amber-700 border-amber-200",   hex:"#f59e0b"},
+  {dot:"bg-teal-500",    bd:"bg-teal-50 text-teal-700 border-teal-200",    hex:"#14b8a6"},
+  {dot:"bg-cyan-500",    bd:"bg-cyan-50 text-cyan-700 border-cyan-200",    hex:"#06b6d4"},
 ];
-const MEMBER_COLORS = ["bg-blue-500","bg-emerald-500","bg-violet-500","bg-rose-500","bg-amber-500","bg-teal-500","bg-pink-500","bg-indigo-500"];
+const MEMBER_COLORS = [
+  "bg-blue-500","bg-emerald-500","bg-violet-500","bg-rose-500",
+  "bg-amber-500","bg-teal-500","bg-pink-500","bg-indigo-500",
+  "bg-red-500","bg-orange-500","bg-cyan-500","bg-sky-500",
+  "bg-lime-500","bg-fuchsia-500","bg-green-500","bg-slate-500",
+];
 const SCFG = {
   기획:    {bg:"bg-gray-500",    lt:"bg-gray-100",    tx:"text-gray-600",    rg:"ring-gray-400"},
   발주:    {bg:"bg-indigo-500",  lt:"bg-indigo-50",   tx:"text-indigo-700",  rg:"ring-indigo-400"},
@@ -48,30 +50,58 @@ const SCFG = {
 };
 const RCFG = { 발주완료:"bg-indigo-100 text-indigo-700", 생산중:"bg-blue-100 text-blue-600", 입고대기:"bg-amber-100 text-amber-700" };
 
-/* ════════════════════════════════════════════════════════════
-   HELPERS
-════════════════════════════════════════════════════════════ */
+/* ══ HELPERS ══ */
 let _id = 0;
-const uid = () => `u${++_id}`;
-const gc  = g => { let h=0; for(const c of String(g||"")) h=(h*31+c.charCodeAt(0))&255; return PAL[h%PAL.length]; };
-const mc  = name => { let h=0; for(const c of String(name||"")) h=(h*31+c.charCodeAt(0))&255; return MEMBER_COLORS[h%MEMBER_COLORS.length]; };
-const dl  = d => d ? Math.ceil((new Date(d)-new Date())/86400000) : null;
-const si  = s => STAGES.indexOf(s);
-const mkT = (label, group, done=false, subs=[]) => ({
+const uid  = () => `u${++_id}`;
+const gc   = g => { let h=0; for(const c of String(g||"")) h=(h*31+c.charCodeAt(0))&255; return PAL[h%PAL.length]; };
+const mc   = name => { let h=0; for(const c of String(name||"")) h=(h*31+c.charCodeAt(0))&255; return MEMBER_COLORS[h%MEMBER_COLORS.length]; };
+const dl   = d => d ? Math.ceil((new Date(d)-new Date())/86400000) : null;
+const si   = s => STAGES.indexOf(s);
+const mkT  = (label, group, done=false, subs=[]) => ({
   id:uid(), label, group, done, open:false, assignee:null, deadline:null,
   subtasks: subs.map(([l,d])=>({id:uid(),label:l,done:d||false}))
 });
-const getPIN     = () => localStorage.getItem("peston_pin")||"1234";
-const savePIN    = p  => localStorage.setItem("peston_pin",p);
-const getMembers = () => { try{ return JSON.parse(localStorage.getItem("peston_members"))||["김민준","이서연","박지호"]; }catch{ return ["김민준","이서연","박지호"]; }};
-const saveMembers= ms => localStorage.setItem("peston_members",JSON.stringify(ms));
-const getData    = () => { try{ const d=localStorage.getItem("peston_data"); return d?JSON.parse(d):null; }catch{ return null; }};
-const saveData   = ps => localStorage.setItem("peston_data",JSON.stringify(ps));
+const getmc = (name, memberColors) => memberColors[name] || mc(name);
+const getGroupColorIdx = (grp, groupMeta) => {
+  if (groupMeta?.[grp]?.colorIdx !== undefined) return groupMeta[grp].colorIdx;
+  let h=0; for(const c of String(grp||"")) h=(h*31+c.charCodeAt(0))&255;
+  return h % PAL.length;
+};
+const getGroupCol = (grp, groupMeta) => PAL[getGroupColorIdx(grp, groupMeta)];
 
-/* ════════════════════════════════════════════════════════════
-   INITIAL DATA
-════════════════════════════════════════════════════════════ */
-const INIT = [
+/* ══ STORAGE ══ */
+const getPIN          = () => localStorage.getItem("peston_pin")||"1234";
+const savePIN         = p  => localStorage.setItem("peston_pin",p);
+const getMembers      = () => { try{ return JSON.parse(localStorage.getItem("peston_members"))||["김민준","이서연","박지호"]; }catch{ return ["김민준","이서연","박지호"]; }};
+const saveMembers     = ms => localStorage.setItem("peston_members",JSON.stringify(ms));
+const getData         = () => { try{ const d=localStorage.getItem("peston_data"); return d?JSON.parse(d):null; }catch{ return null; }};
+const saveData        = ps => localStorage.setItem("peston_data",JSON.stringify(ps));
+const getMemberColors = () => { try{ return JSON.parse(localStorage.getItem("peston_mcolors"))||{}; }catch{ return {}; }};
+const saveMemberColors= c  => localStorage.setItem("peston_mcolors",JSON.stringify(c));
+const getSharedData   = () => { try{ const el=document.getElementById("shared-data"); if(!el) return null; const d=JSON.parse(el.textContent); return d; }catch{ return null; }};
+
+/* ══ MIGRATION ══ */
+const mkDefaultPT = (status) => {
+  const allDone = si(status) >= 1;
+  return [
+    mkT('시장 조사','기획',allDone),
+    mkT('경쟁사 분석','기획',allDone),
+    mkT('제품 스펙 확정','스펙',allDone),
+    mkT('가격 책정','스펙',allDone),
+    mkT('공급업체 선정','발주준비',allDone),
+    mkT('샘플 검토','발주준비',allDone),
+    mkT('런칭 일정 확정','일정',allDone),
+  ];
+};
+const migrate = p => ({
+  image: null, price:0, cost:0, sku:"", description:"",
+  pt: mkDefaultPT(p.status||"기획"),
+  groupMeta: {},
+  ...p,
+});
+
+/* ══ INITIAL DATA ══ */
+const INIT_RAW = [
   {
     id:1, name:"패스톤 CO2 트랩", url:"", category:"트랩류", status:"생산중",
     ordered:true, qty:500, stock:0, deadline:"2026-05-20", memo:"금형 완료, 조립 단계 진행 중", reorder:null,
@@ -130,21 +160,20 @@ const INIT = [
     id:4, name:"패스톤 전기 모기 퇴치기", url:"", category:"전자기기", status:"기획",
     ordered:false, qty:0, stock:0, deadline:"2026-07-15", memo:"스펙 확정 및 샘플 협의 중", reorder:null,
     ct:[ mkT('기획서 작성','상세페이지'), mkT('촬영','상세페이지'), mkT('편집','상세페이지'), mkT('등록 완료','상세페이지'), mkT('썸네일 촬영','썸네일'), mkT('썸네일 편집','썸네일'), mkT('패키지 디자인','패키지'), mkT('상품 설명 검수','검수') ],
-    mt:[ mkT('광고 이미지 제작','광고 소재'), mkT('광고 영상 제작','광고 소재',[],[['스크립트 작성',false],['촬영',false],['편집',false],['유튜브 업로드',false]]), mkT('SNS 포스팅 초안','SNS'), mkT('릴스/쇼츠 제작','SNS'), mkT('인플루언서 섭외','바이럴'), mkT('리뷰 의뢰','바이럴'), mkT('키워드 광고 등록','광고 집행'), mkT('스마트스토어 최적화','광고 집행') ],
+    mt:[ mkT('광고 이미지 제작','광고 소재'), mkT('광고 영상 제작','광고 소재'), mkT('SNS 포스팅 초안','SNS'), mkT('릴스/쇼츠 제작','SNS'), mkT('인플루언서 섭외','바이럴'), mkT('리뷰 의뢰','바이럴'), mkT('키워드 광고 등록','광고 집행'), mkT('스마트스토어 최적화','광고 집행') ],
   },
   {
     id:5, name:"패스톤 바퀴벌레 젤 베이트", url:"https://smartstore.naver.com/peston", category:"살충제", status:"판매중",
     ordered:true, qty:800, stock:342, deadline:"2026-03-20", memo:"스마트스토어 상위 노출 유지 중",
     reorder:{qty:1000, deadline:"2026-06-15", status:"생산중"},
     ct:[
-      mkT('기획서 작성','상세페이지',true,[['경쟁사 분석',true],['키워드 리서치',true]]),
-      mkT('촬영','상세페이지',true), mkT('편집','상세페이지',true,[['1차 편집',true],['피드백 반영',true]]),
-      mkT('등록 완료','상세페이지',true), mkT('썸네일 촬영','썸네일',true), mkT('썸네일 편집','썸네일',true),
+      mkT('기획서 작성','상세페이지',true), mkT('촬영','상세페이지',true),
+      mkT('편집','상세페이지',true), mkT('등록 완료','상세페이지',true),
+      mkT('썸네일 촬영','썸네일',true), mkT('썸네일 편집','썸네일',true),
       mkT('패키지 디자인','패키지',true), mkT('상품 설명 검수','검수',true),
     ],
     mt:[
-      mkT('광고 이미지 제작','광고 소재',true,[['배경 촬영',true],['카피 작성',true],['디자인 합성',true]]),
-      mkT('광고 영상 제작','광고 소재',true,[['스크립트 작성',true],['촬영',true],['편집',true],['유튜브 업로드',true]]),
+      mkT('광고 이미지 제작','광고 소재',true), mkT('광고 영상 제작','광고 소재',true),
       mkT('SNS 포스팅 초안','SNS',true), mkT('릴스/쇼츠 제작','SNS',true),
       mkT('인플루언서 섭외','바이럴',true), mkT('리뷰 의뢰','바이럴',true),
       mkT('키워드 광고 등록','광고 집행',true), mkT('스마트스토어 최적화','광고 집행',true),
@@ -176,28 +205,9 @@ const INIT = [
     mt:[ mkT('광고 이미지 제작','광고 소재',true), mkT('광고 영상 제작','광고 소재',false,[['스크립트 작성',false],['촬영',false],['편집',false],['유튜브 업로드',false]]), mkT('SNS 포스팅 초안','SNS',true), mkT('릴스/쇼츠 제작','SNS',true), mkT('인플루언서 섭외','바이럴',false), mkT('리뷰 의뢰','바이럴',true), mkT('키워드 광고 등록','광고 집행',true), mkT('스마트스토어 최적화','광고 집행',true) ],
   },
 ];
-// 샘플 담당자 배정
-const sampleAssign = () => {
-  const members = getMembers();
-  if(members.length >= 3) {
-    INIT[0].ct[2].assignee = members[0]; // 편집
-    INIT[0].ct[3].assignee = members[0]; // 등록
-    INIT[0].ct[5].assignee = members[1]; // 썸네일 편집
-    INIT[0].mt[0].assignee = members[1]; // 광고 이미지
-    INIT[0].mt[1].assignee = members[2]; // 광고 영상
-    INIT[1].ct[3].assignee = members[0]; // 등록
-    INIT[1].mt[1].assignee = members[2]; // 광고 영상
-    INIT[2].ct[1].assignee = members[0]; // 촬영
-    INIT[2].ct[2].assignee = members[0]; // 편집
-    INIT[5].ct[2].assignee = members[1]; // 편집
-    INIT[5].mt[1].assignee = members[2]; // 광고 영상
-  }
-};
-sampleAssign();
+const INIT = INIT_RAW.map(migrate);
 
-/* ════════════════════════════════════════════════════════════
-   UI PRIMITIVES
-════════════════════════════════════════════════════════════ */
+/* ══ UI PRIMITIVES ══ */
 function MiniBar({v}) {
   const c = v>=100?"bg-emerald-500":v>=60?"bg-blue-500":v>=30?"bg-amber-400":"bg-red-400";
   return (
@@ -268,22 +278,85 @@ function AddInput({placeholder, onAdd, onCancel}) {
   );
 }
 
-/** 담당자 지정 드롭다운 */
+/* ── 제품 이미지 컴포넌트 ── */
+function ProductImage({image, name, size="sm", onChange}) {
+  const canEdit = useRole() === "editor";
+  const fileRef = useRef();
+  const sz = size==="lg" ? "w-28 h-28 rounded-xl text-3xl" : size==="md" ? "w-16 h-16 rounded-lg text-2xl" : "w-10 h-10 rounded-lg text-base";
+  const handleFile = e => {
+    const f = e.target.files[0];
+    if(!f) return;
+    const reader = new FileReader();
+    reader.onload = ev => { onChange(ev.target.result); };
+    reader.readAsDataURL(f);
+    e.target.value = "";
+  };
+  return (
+    <div className={`relative flex-shrink-0 group/img ${sz} overflow-hidden bg-gray-100 flex items-center justify-center`}
+      style={{cursor: canEdit ? "pointer" : "default"}}
+      onClick={e=>{ if(canEdit){e.stopPropagation();fileRef.current?.click();} }}>
+      {image
+        ? <img src={image} alt={name} className="w-full h-full object-cover"/>
+        : <span className="select-none">📦</span>
+      }
+      {canEdit && (
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex flex-col items-center justify-center gap-0.5">
+          <span className="text-white text-xs font-medium leading-tight">{image?"변경":"사진추가"}</span>
+          {image && <button className="text-red-300 hover:text-red-400 text-xs leading-tight"
+            onClick={e=>{e.stopPropagation();onChange(null);}}>✕삭제</button>}
+        </div>
+      )}
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile}/>
+    </div>
+  );
+}
+
+/* ── 팀원 편집 모달 ── */
+function MemberEditModal({name, onSave, onClose}) {
+  const { memberColors } = useMembers();
+  const [nameVal, setNameVal] = useState(name);
+  const [colorVal, setColorVal] = useState(memberColors[name] || mc(name));
+  const commit = () => { const n=nameVal.trim(); if(!n) return; onSave(n,colorVal); onClose(); };
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl p-5 w-72 space-y-4" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <div className={`w-9 h-9 rounded-full ${colorVal} flex-shrink-0`}/>
+          <div><p className="font-bold text-gray-800 text-sm">팀원 편집</p><p className="text-xs text-gray-400">이름과 색상을 변경하세요</p></div>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-gray-500 mb-1 block">이름</label>
+          <input autoFocus value={nameVal} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            onChange={e=>setNameVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape")onClose();}}/>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-gray-500 mb-2 block">색상</label>
+          <div className="grid grid-cols-8 gap-1.5">
+            {MEMBER_COLORS.map(c=>(
+              <button key={c} onClick={()=>setColorVal(c)}
+                className={`w-7 h-7 rounded-full ${c} transition-all hover:scale-110 ${colorVal===c?"ring-2 ring-offset-2 ring-gray-500 scale-110":""}`}/>
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={commit} className="flex-1 bg-blue-600 text-white text-sm py-2 rounded-lg hover:bg-blue-700 font-medium">저장</button>
+          <button onClick={onClose} className="px-4 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">취소</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 담당자 선택 ── */
 function AssigneeSelect({value, onChange}) {
   const canEdit = useRole() === "editor";
-  const { members } = useMembers();
+  const { members, memberColors } = useMembers();
   const [open, setOpen] = useState(false);
-  const color = value ? mc(value) : "bg-gray-300";
-
+  const color = value ? getmc(value, memberColors) : "bg-gray-300";
   if (!canEdit) {
     if (!value) return null;
-    return (
-      <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white ${color} flex-shrink-0`}>
-        {value}
-      </span>
-    );
+    return <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white ${color} flex-shrink-0`}>{value}</span>;
   }
-
   return (
     <div className="relative flex-shrink-0" onClick={e=>e.stopPropagation()}>
       <button onClick={()=>setOpen(!open)}
@@ -294,13 +367,11 @@ function AssigneeSelect({value, onChange}) {
       </button>
       {open && (
         <div className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-28">
-          <button onClick={()=>{onChange(null);setOpen(false);}}
-            className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-gray-400">담당자 없음</button>
+          <button onClick={()=>{onChange(null);setOpen(false);}} className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-gray-400">담당자 없음</button>
           {members.map(m=>(
             <button key={m} onClick={()=>{onChange(m);setOpen(false);}}
               className={`w-full text-left text-xs px-3 py-1.5 hover:bg-blue-50 flex items-center gap-2 ${value===m?"font-semibold text-blue-600":""}`}>
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${mc(m)}`}/>
-              {m}
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getmc(m,memberColors)}`}/>{m}
             </button>
           ))}
         </div>
@@ -309,49 +380,40 @@ function AssigneeSelect({value, onChange}) {
   );
 }
 
-/** 태스크별 D-day 설정 pill */
+/* ── D-day 태스크 마감일 ── */
 function TaskDeadlinePill({value, onChange}) {
   const canEdit = useRole() === "editor";
   const [editing, setEditing] = useState(false);
-
   const today = new Date(); today.setHours(0,0,0,0);
-  const d = value ? Math.round((new Date(value) - today) / 86400000) : null;
-  const label = d === null ? null : d < 0 ? `D+${Math.abs(d)}` : `D-${d}`;
-  const color = d === null ? ""
-    : d < 0   ? "bg-red-100 text-red-600 border-red-200"
-    : d === 0  ? "bg-red-50 text-red-500 border-red-200"
-    : d <= 3   ? "bg-orange-100 text-orange-600 border-orange-200"
-    : d <= 7   ? "bg-amber-100 text-amber-600 border-amber-200"
-    : "bg-gray-100 text-gray-500 border-gray-200";
-
+  const d = value ? Math.round((new Date(value)-today)/86400000) : null;
+  const label = d===null?null:d<0?`D+${Math.abs(d)}`:`D-${d}`;
+  const color = d===null?""
+    :d<0?"bg-red-100 text-red-600 border-red-200"
+    :d===0?"bg-red-50 text-red-500 border-red-200"
+    :d<=3?"bg-orange-100 text-orange-600 border-orange-200"
+    :d<=7?"bg-amber-100 text-amber-600 border-amber-200"
+    :"bg-gray-100 text-gray-500 border-gray-200";
   if (!canEdit) {
     if (!value) return null;
     return <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium flex-shrink-0 ${color}`} title={value}>{label}</span>;
   }
-
   if (editing) return (
     <input type="date" autoFocus value={value||""}
       className="text-xs border border-blue-300 rounded-lg px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 flex-shrink-0"
       style={{width:"7.5rem"}}
-      onChange={e=>onChange(e.target.value||null)}
-      onBlur={()=>setEditing(false)}
-      onKeyDown={e=>{if(e.key==="Escape")setEditing(false);}}
-      onClick={e=>e.stopPropagation()}
-    />
+      onChange={e=>onChange(e.target.value||null)} onBlur={()=>setEditing(false)}
+      onKeyDown={e=>{if(e.key==="Escape")setEditing(false);}} onClick={e=>e.stopPropagation()}/>
   );
-
   return value
     ? <button onClick={e=>{e.stopPropagation();setEditing(true);}}
         className={`text-xs px-1.5 py-0.5 rounded-full border font-medium flex-shrink-0 transition-opacity hover:opacity-75 ${color}`}
-        title={`마감일: ${value} (클릭하여 수정)`}>{label}</button>
+        title={`마감일: ${value}`}>{label}</button>
     : <button onClick={e=>{e.stopPropagation();setEditing(true);}}
         className="opacity-0 group-hover/task:opacity-60 hover:!opacity-100 text-gray-400 hover:text-blue-500 text-xs flex-shrink-0 px-0.5"
         title="D-day 설정">📅</button>;
 }
 
-/* ════════════════════════════════════════════════════════════
-   PIPELINE
-════════════════════════════════════════════════════════════ */
+/* ══ PIPELINE ══ */
 function PipelineBar({status}) {
   const cur = si(status);
   return (
@@ -384,17 +446,15 @@ function ReorderBadge({reorder}) {
     </div>
   );
 }
-function TaskDots({tasks}) {
+function TaskDots({tasks, groupMeta={}}) {
   return (
     <div className="flex flex-wrap gap-0.5">
-      {tasks.map(t=><div key={t.id} title={t.label} className={`w-2 h-2 rounded-full ${t.done?gc(t.group).dot:"bg-gray-200"}`}/>)}
+      {tasks.map(t=><div key={t.id} title={t.label} className={`w-2 h-2 rounded-full ${t.done?getGroupCol(t.group,groupMeta).dot:"bg-gray-200"}`}/>)}
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════
-   TASK PANEL
-════════════════════════════════════════════════════════════ */
+/* ══ TASK PANEL ══ */
 function SubRow({sub, onToggle, onDelete, onRename}) {
   const canEdit = useRole() === "editor";
   return (
@@ -403,8 +463,7 @@ function SubRow({sub, onToggle, onDelete, onRename}) {
       <input type="checkbox" checked={sub.done} onChange={canEdit?onToggle:undefined} disabled={!canEdit}
         className={`w-3 h-3 rounded accent-blue-500 flex-shrink-0 ${canEdit?"cursor-pointer":"cursor-default opacity-60"}`}/>
       <Editable value={sub.label} onChange={onRename}
-        className={`text-xs flex-1 min-w-0 ${sub.done?"line-through text-gray-400":"text-gray-600"}`}
-        placeholder="하위 항목"/>
+        className={`text-xs flex-1 min-w-0 ${sub.done?"line-through text-gray-400":"text-gray-600"}`} placeholder="하위 항목"/>
       {canEdit&&<button onClick={e=>{e.stopPropagation();onDelete();}} className="opacity-0 group-hover/sub:opacity-100 text-red-300 hover:text-red-500 text-xs flex-shrink-0 ml-1">✕</button>}
     </div>
   );
@@ -420,8 +479,7 @@ function TaskRow({task, onToggle, onDelete, onRename, onToggleOpen, onAddSub, on
         <input type="checkbox" checked={task.done} onChange={canEdit?onToggle:undefined} disabled={!canEdit}
           className={`w-3.5 h-3.5 rounded accent-blue-500 flex-shrink-0 ${canEdit?"cursor-pointer":"cursor-default opacity-60"}`}/>
         <Editable value={task.label} onChange={onRename}
-          className={`text-xs flex-1 min-w-0 ${task.done?"line-through text-gray-400":"text-gray-700"}`}
-          placeholder="태스크 이름"/>
+          className={`text-xs flex-1 min-w-0 ${task.done?"line-through text-gray-400":"text-gray-700"}`} placeholder="태스크 이름"/>
         {task.subtasks.length>0&&(
           <button onClick={e=>{e.stopPropagation();onToggleOpen();}}
             className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0 bg-gray-100 rounded px-1 py-0.5">
@@ -449,40 +507,93 @@ function TaskRow({task, onToggle, onDelete, onRename, onToggleOpen, onAddSub, on
   );
 }
 
-function TaskPanel({tasks, onUpdate}) {
+function TaskPanel({tasks, groupMeta={}, onUpdate, onUpdateGroupMeta}) {
   const canEdit = useRole() === "editor";
   const [addingTo, setAddingTo] = useState(null);
   const [newGroup, setNewGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
-  const up = fn => onUpdate(fn);
-  const toggleTask   = tid => up(ts=>ts.map(t=>t.id===tid?{...t,done:!t.done}:t));
-  const deleteTask   = tid => up(ts=>ts.filter(t=>t.id!==tid));
-  const renameTask   = (tid,l) => up(ts=>ts.map(t=>t.id===tid?{...t,label:l}:t));
-  const toggleOpen   = tid => up(ts=>ts.map(t=>t.id===tid?{...t,open:!t.open}:t));
-  const addTask      = (label,group) => { up(ts=>[...ts,mkT(label,group)]); setAddingTo(null); };
-  const assignTask   = (tid,assignee) => up(ts=>ts.map(t=>t.id===tid?{...t,assignee}:t));
-  const setDeadline  = (tid,deadline) => up(ts=>ts.map(t=>t.id===tid?{...t,deadline}:t));
-  const addSub     = (tid,l) => up(ts=>ts.map(t=>t.id===tid?{...t,open:true,subtasks:[...t.subtasks,{id:uid(),label:l,done:false}]}:t));
-  const toggleSub  = (tid,sid) => up(ts=>ts.map(t=>t.id===tid?{...t,subtasks:t.subtasks.map(s=>s.id===sid?{...s,done:!s.done}:s)}:t));
-  const deleteSub  = (tid,sid) => up(ts=>ts.map(t=>t.id===tid?{...t,subtasks:t.subtasks.filter(s=>s.id!==sid)}:t));
-  const renameSub  = (tid,sid,l) => up(ts=>ts.map(t=>t.id===tid?{...t,subtasks:t.subtasks.map(s=>s.id===sid?{...s,label:l}:s)}:t));
+  const [editingGroup, setEditingGroup] = useState(null);
+  const [groupDraft, setGroupDraft] = useState({name:"", colorIdx:0});
+
+  const up   = fn => onUpdate(fn);
+  const toggleTask  = tid => up(ts=>ts.map(t=>t.id===tid?{...t,done:!t.done}:t));
+  const deleteTask  = tid => up(ts=>ts.filter(t=>t.id!==tid));
+  const renameTask  = (tid,l) => up(ts=>ts.map(t=>t.id===tid?{...t,label:l}:t));
+  const toggleOpen  = tid => up(ts=>ts.map(t=>t.id===tid?{...t,open:!t.open}:t));
+  const addTask     = (label,group) => { up(ts=>[...ts,mkT(label,group)]); setAddingTo(null); };
+  const assignTask  = (tid,assignee) => up(ts=>ts.map(t=>t.id===tid?{...t,assignee}:t));
+  const setDeadline = (tid,deadline) => up(ts=>ts.map(t=>t.id===tid?{...t,deadline}:t));
+  const addSub      = (tid,l) => up(ts=>ts.map(t=>t.id===tid?{...t,open:true,subtasks:[...t.subtasks,{id:uid(),label:l,done:false}]}:t));
+  const toggleSub   = (tid,sid) => up(ts=>ts.map(t=>t.id===tid?{...t,subtasks:t.subtasks.map(s=>s.id===sid?{...s,done:!s.done}:s)}:t));
+  const deleteSub   = (tid,sid) => up(ts=>ts.map(t=>t.id===tid?{...t,subtasks:t.subtasks.filter(s=>s.id!==sid)}:t));
+  const renameSub   = (tid,sid,l) => up(ts=>ts.map(t=>t.id===tid?{...t,subtasks:t.subtasks.map(s=>s.id===sid?{...s,label:l}:s)}:t));
+
+  const startEditGroup = (grp) => {
+    const cidx = getGroupColorIdx(grp, groupMeta);
+    setGroupDraft({name: grp, colorIdx: cidx});
+    setEditingGroup(grp);
+  };
+  const commitGroupEdit = () => {
+    const oldName = editingGroup;
+    const {name: newName, colorIdx} = groupDraft;
+    if(!newName.trim()) return;
+    // rename tasks
+    if(newName !== oldName) up(ts=>ts.map(t=>t.group===oldName?{...t,group:newName}:t));
+    // update groupMeta
+    if(onUpdateGroupMeta) {
+      const newMeta = {...groupMeta};
+      newMeta[newName] = {colorIdx};
+      if(newName !== oldName) delete newMeta[oldName];
+      onUpdateGroupMeta(newMeta);
+    }
+    setEditingGroup(null);
+  };
+
   const groups = [...new Set(tasks.map(t=>t.group))];
   const done = tasks.filter(t=>t.done).length;
   const pct  = tasks.length>0?Math.round((done/tasks.length)*100):0;
   const handleNewGroup = () => { if(newGroupName.trim()){ addTask("새 태스크",newGroupName.trim()); setNewGroup(false); setNewGroupName(""); }};
+
   return (
     <div className="space-y-4" onClick={e=>e.stopPropagation()}>
-      <div className="flex items-center gap-3"><div className="flex-1"><MiniBar v={pct}/></div><span className="text-xs text-gray-400 flex-shrink-0">{done}/{tasks.length} 완료</span></div>
+      <div className="flex items-center gap-3">
+        <div className="flex-1"><MiniBar v={pct}/></div>
+        <span className="text-xs text-gray-400 flex-shrink-0">{done}/{tasks.length} 완료</span>
+      </div>
       {groups.map(grp=>{
-        const grpTasks=tasks.filter(t=>t.group===grp), gDone=grpTasks.filter(t=>t.done).length, col=gc(grp), isAdding=addingTo===grp;
+        const grpTasks=tasks.filter(t=>t.group===grp), gDone=grpTasks.filter(t=>t.done).length;
+        const col=getGroupCol(grp, groupMeta);
+        const isAdding=addingTo===grp;
+        const isEditing=editingGroup===grp;
         return (
           <div key={grp} className="bg-white rounded-lg border border-gray-100 p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full border inline-flex items-center gap-1.5 ${col.bd}`}>
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${col.dot}`}/>{grp}
-                <span className="text-gray-400 font-normal">{gDone}/{grpTasks.length}</span>
-              </span>
-              {canEdit&&<button onClick={()=>setAddingTo(isAdding?null:grp)} className="text-xs text-blue-400 hover:text-blue-600 hover:bg-blue-50 px-1.5 py-0.5 rounded">+ 태스크</button>}
+              {isEditing ? (
+                <div className="flex items-center gap-2 flex-1" onClick={e=>e.stopPropagation()}>
+                  {/* 색상 선택 */}
+                  <div className="flex gap-1 flex-wrap">
+                    {PAL.map((p,i)=>(
+                      <button key={i} onClick={()=>setGroupDraft(d=>({...d,colorIdx:i}))}
+                        className={`w-5 h-5 rounded-full ${p.dot} transition-all hover:scale-110 ${groupDraft.colorIdx===i?"ring-2 ring-offset-1 ring-gray-500 scale-110":""}`}/>
+                    ))}
+                  </div>
+                  <input autoFocus value={groupDraft.name}
+                    className="border border-blue-300 rounded-lg px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 w-28"
+                    onChange={e=>setGroupDraft(d=>({...d,name:e.target.value}))}
+                    onKeyDown={e=>{if(e.key==="Enter")commitGroupEdit();if(e.key==="Escape")setEditingGroup(null);}}
+                  />
+                  <button onClick={commitGroupEdit} className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-lg hover:bg-blue-600">저장</button>
+                  <button onClick={()=>setEditingGroup(null)} className="text-xs text-gray-400 px-1">✕</button>
+                </div>
+              ) : (
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full border inline-flex items-center gap-1.5 ${col.bd}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${col.dot}`}/>{grp}
+                  <span className="text-gray-400 font-normal">{gDone}/{grpTasks.length}</span>
+                  {canEdit&&<button onClick={e=>{e.stopPropagation();startEditGroup(grp);}}
+                    className="opacity-60 hover:opacity-100 text-xs ml-0.5" title="그룹 편집">✏️</button>}
+                </span>
+              )}
+              {canEdit&&!isEditing&&<button onClick={()=>setAddingTo(isAdding?null:grp)} className="text-xs text-blue-400 hover:text-blue-600 hover:bg-blue-50 px-1.5 py-0.5 rounded">+ 태스크</button>}
             </div>
             <div className="space-y-0.5 pl-0.5">
               {grpTasks.map(t=>(
@@ -518,9 +629,7 @@ function TaskPanel({tasks, onUpdate}) {
   );
 }
 
-/* ════════════════════════════════════════════════════════════
-   KPI
-════════════════════════════════════════════════════════════ */
+/* ══ KPI ══ */
 function KPI({icon,label,value,color}) {
   const C={gray:"bg-gray-100",blue:"bg-blue-50",emerald:"bg-emerald-50",amber:"bg-amber-50",indigo:"bg-indigo-50",red:"bg-red-50",purple:"bg-purple-50"};
   return (
@@ -531,12 +640,9 @@ function KPI({icon,label,value,color}) {
   );
 }
 
-/* ════════════════════════════════════════════════════════════
-   MODALS — PIN 잠금/해제
-════════════════════════════════════════════════════════════ */
+/* ══ MODALS ══ */
 function UnlockModal({onUnlock, onClose}) {
-  const [pin, setPin] = useState("");
-  const [err, setErr] = useState("");
+  const [pin, setPin] = useState(""); const [err, setErr] = useState("");
   const go = () => { if(pin===getPIN()){onUnlock();onClose();}else setErr("PIN이 올바르지 않습니다."); };
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={onClose}>
@@ -545,9 +651,7 @@ function UnlockModal({onUnlock, onClose}) {
         <p className="text-xs text-gray-500">편집자 PIN을 입력하세요. <span className="text-gray-400">(기본값: 1234)</span></p>
         <input type="password" value={pin} placeholder="PIN 입력..."
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-          onChange={e=>setPin(e.target.value)}
-          onKeyDown={e=>{if(e.key==="Enter")go();if(e.key==="Escape")onClose();}}
-        />
+          onChange={e=>setPin(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")go();if(e.key==="Escape")onClose();}}/>
         {err&&<p className="text-xs text-red-500">{err}</p>}
         <div className="flex gap-2">
           <button onClick={go} className="flex-1 bg-blue-600 text-white text-sm py-2 rounded-lg hover:bg-blue-700">잠금 해제</button>
@@ -557,26 +661,15 @@ function UnlockModal({onUnlock, onClose}) {
     </div>
   );
 }
-
 function ChangePinModal({onClose}) {
-  const [n, setN] = useState(""); const [c2, setC2] = useState(""); const [err, setErr] = useState("");
-  const save = () => {
-    if(n.length<4){setErr("4자리 이상 입력하세요.");return;}
-    if(n!==c2){setErr("PIN이 일치하지 않습니다.");return;}
-    savePIN(n); onClose();
-  };
+  const [n,setN]=useState(""); const [c2,setC2]=useState(""); const [err,setErr]=useState("");
+  const save = () => { if(n.length<4){setErr("4자리 이상 입력하세요.");return;} if(n!==c2){setErr("PIN이 일치하지 않습니다.");return;} savePIN(n); onClose(); };
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 space-y-4" onClick={e=>e.stopPropagation()}>
         <h3 className="font-bold text-gray-800">🔑 편집자 PIN 변경</h3>
-        <input type="password" value={n} placeholder="새 PIN (4자리 이상)"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-          onChange={e=>setN(e.target.value)}/>
-        <input type="password" value={c2} placeholder="새 PIN 확인"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-          onChange={e=>setC2(e.target.value)}
-          onKeyDown={e=>{if(e.key==="Enter")save();}}
-        />
+        <input type="password" value={n} placeholder="새 PIN (4자리 이상)" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" onChange={e=>setN(e.target.value)}/>
+        <input type="password" value={c2} placeholder="새 PIN 확인" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" onChange={e=>setC2(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")save();}}/>
         {err&&<p className="text-xs text-red-500">{err}</p>}
         <div className="flex gap-2">
           <button onClick={save} className="flex-1 bg-blue-600 text-white text-sm py-2 rounded-lg hover:bg-blue-700">저장</button>
@@ -587,95 +680,57 @@ function ChangePinModal({onClose}) {
   );
 }
 
-/* ════════════════════════════════════════════════════════════
-   TEAM VIEW — 팀 현황 탭
-════════════════════════════════════════════════════════════ */
-function TeamView({prods, onRenameMember}) {
+/* ══ TEAM VIEW ══ */
+function TeamView({prods, onEditMember}) {
   const canEdit = useRole() === "editor";
-  const { members, setMembers } = useMembers();
+  const { members, setMembers, memberColors } = useMembers();
   const [selected, setSelected] = useState("전체");
   const [addingMember, setAddingMember] = useState(false);
-  const [renamingMember, setRenamingMember] = useState(null); // 이름 변경 중인 팀원
-  const [renameVal, setRenameVal] = useState("");
+  const [editingMember, setEditingMember] = useState(null);
 
-  // 모든 제품의 태스크를 flat하게 수집
   const allTasks = useMemo(() => prods.flatMap(p=>[
+    ...p.pt.map(t=>({...t, product:p.name, productId:p.id, typeLabel:"기획"})),
     ...p.ct.map(t=>({...t, product:p.name, productId:p.id, typeLabel:"콘텐츠"})),
     ...p.mt.map(t=>({...t, product:p.name, productId:p.id, typeLabel:"마케팅"})),
   ]),[prods]);
 
-  const byMember = useMemo(()=> members.reduce((acc,m)=>{
-    acc[m]=allTasks.filter(t=>t.assignee===m); return acc;
-  },{}), [allTasks,members]);
-
+  const byMember = useMemo(()=> members.reduce((acc,m)=>{ acc[m]=allTasks.filter(t=>t.assignee===m); return acc; },{}), [allTasks,members]);
   const unassigned = useMemo(()=>allTasks.filter(t=>!t.assignee),[allTasks]);
   const display = selected==="전체" ? members : [selected];
 
-  const handleAddMember = name => {
-    const updated = [...members, name];
-    setMembers(updated); saveMembers(updated); setAddingMember(false);
-  };
-  const handleDelMember = m => {
-    if(window.confirm(`"${m}" 팀원을 삭제하시겠습니까? 배정된 태스크의 담당자도 해제됩니다.`)) {
-      const updated = members.filter(x=>x!==m);
-      setMembers(updated); saveMembers(updated);
-    }
-  };
-  const startRename = m => { setRenamingMember(m); setRenameVal(m); };
-  const commitRename = () => {
-    const newName = renameVal.trim();
-    if(!newName || newName === renamingMember) { setRenamingMember(null); return; }
-    const updated = members.map(x => x===renamingMember ? newName : x);
-    setMembers(updated); saveMembers(updated);
-    if(onRenameMember) onRenameMember(renamingMember, newName);
-    if(selected === renamingMember) setSelected(newName);
-    setRenamingMember(null);
-  };
+  const handleAddMember = name => { const u=[...members,name]; setMembers(u); saveMembers(u); setAddingMember(false); };
+  const handleDelMember = m => { if(window.confirm(`"${m}" 팀원을 삭제하시겠습니까?`)){ const u=members.filter(x=>x!==m); setMembers(u); saveMembers(u); }};
+  const handleSaveMember = (oldName, newName, newColor) => { if(onEditMember) onEditMember(oldName,newName,newColor); if(selected===oldName) setSelected(newName); };
 
   return (
     <div className="space-y-5">
-      {/* 팀원 탭 필터 */}
+      {editingMember&&<MemberEditModal name={editingMember} onSave={(n,c)=>handleSaveMember(editingMember,n,c)} onClose={()=>setEditingMember(null)}/>}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 flex flex-wrap items-center gap-3">
         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">팀원 필터</span>
         <div className="flex flex-wrap gap-1.5">
           {["전체",...members].map(m=>{
-            const tasks = m==="전체" ? null : byMember[m]||[];
-            const active = selected===m;
-            if(canEdit && m!=="전체" && renamingMember===m) return (
-              <div key={m} className="flex items-center gap-1" onClick={e=>e.stopPropagation()}>
-                <input autoFocus value={renameVal}
-                  className="text-xs border border-blue-400 rounded-lg px-2 py-1 focus:outline-none w-24"
-                  onChange={e=>setRenameVal(e.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={e=>{if(e.key==="Enter")commitRename();if(e.key==="Escape")setRenamingMember(null);}}
-                />
-              </div>
-            );
+            const tasks=m==="전체"?null:byMember[m]||[];
+            const active=selected===m, mColor=m!=="전체"?getmc(m,memberColors):"";
             return (
               <div key={m} className="flex items-center gap-0.5">
                 <button onClick={()=>setSelected(m)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all flex items-center gap-1.5
                     ${active?"bg-blue-600 text-white border-blue-600":"bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"}`}>
-                  {m!=="전체"&&<span className={`w-2 h-2 rounded-full flex-shrink-0 ${active?"bg-white/70":mc(m)}`}/>}
+                  {m!=="전체"&&<span className={`w-2 h-2 rounded-full flex-shrink-0 ${active?"bg-white/70":mColor}`}/>}
                   {m}
                   {tasks&&<span className={`text-xs ${active?"opacity-80":"text-gray-400"}`}>{tasks.filter(t=>t.done).length}/{tasks.length}</span>}
                 </button>
-                {canEdit&&m!=="전체"&&(
-                  <button onClick={()=>startRename(m)} className="text-gray-300 hover:text-blue-400 text-xs p-0.5 rounded" title="이름 변경">✏️</button>
-                )}
+                {canEdit&&m!=="전체"&&<button onClick={()=>setEditingMember(m)} className="text-gray-300 hover:text-blue-400 text-xs p-0.5 rounded" title="이름/색상 변경">✏️</button>}
               </div>
             );
           })}
         </div>
-        {canEdit&&(
-          addingMember
-            ?<AddInput placeholder="팀원 이름..." onAdd={handleAddMember} onCancel={()=>setAddingMember(false)}/>
-            :<button onClick={()=>setAddingMember(true)} className="text-xs text-blue-400 hover:text-blue-600 border border-dashed border-blue-200 rounded-lg px-2.5 py-1 hover:border-blue-400">＋ 팀원 추가</button>
+        {canEdit&&(addingMember
+          ?<AddInput placeholder="팀원 이름..." onAdd={handleAddMember} onCancel={()=>setAddingMember(false)}/>
+          :<button onClick={()=>setAddingMember(true)} className="text-xs text-blue-400 hover:text-blue-600 border border-dashed border-blue-200 rounded-lg px-2.5 py-1 hover:border-blue-400">＋ 팀원 추가</button>
         )}
       </div>
-
-      {/* 전체 미배정 요약 */}
-      {selected==="전체" && unassigned.filter(t=>!t.done).length>0&&(
+      {selected==="전체"&&unassigned.filter(t=>!t.done).length>0&&(
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
           <span className="text-xl">⚠️</span>
           <div>
@@ -684,40 +739,25 @@ function TeamView({prods, onRenameMember}) {
           </div>
         </div>
       )}
-
-      {/* 팀원 카드 그리드 */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {display.map(m=>{
-          const tasks = byMember[m]||[];
-          const done  = tasks.filter(t=>t.done).length;
-          const pct   = tasks.length>0?Math.round((done/tasks.length)*100):0;
-          const pending   = tasks.filter(t=>!t.done);
-          const completed = tasks.filter(t=>t.done);
-          const color = mc(m);
+          const tasks=byMember[m]||[], done=tasks.filter(t=>t.done).length;
+          const pct=tasks.length>0?Math.round((done/tasks.length)*100):0;
+          const pending=tasks.filter(t=>!t.done), completed=tasks.filter(t=>t.done);
+          const color=getmc(m,memberColors);
           return (
             <div key={m} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              {/* 카드 헤더 */}
               <div className="px-4 py-3 border-b border-gray-100">
                 <div className="flex items-center justify-between mb-2.5">
                   <div className="flex items-center gap-2.5">
                     <div className={`w-9 h-9 rounded-full ${color} flex-shrink-0`}/>
                     <div>
-                      {canEdit && renamingMember===m
-                        ? <input autoFocus value={renameVal}
-                            className="text-sm font-semibold border-b-2 border-blue-400 bg-transparent focus:outline-none"
-                            onChange={e=>setRenameVal(e.target.value)}
-                            onBlur={commitRename}
-                            onKeyDown={e=>{if(e.key==="Enter")commitRename();if(e.key==="Escape")setRenamingMember(null);}}
-                          />
-                        : <div className="flex items-center gap-1">
-                            <p className="font-semibold text-gray-800 text-sm">{m}</p>
-                            {canEdit&&<button onClick={()=>startRename(m)} className="text-gray-300 hover:text-blue-400 text-xs" title="이름 변경">✏️</button>}
-                          </div>
-                      }
+                      <div className="flex items-center gap-1">
+                        <p className="font-semibold text-gray-800 text-sm">{m}</p>
+                        {canEdit&&<button onClick={()=>setEditingMember(m)} className="text-gray-300 hover:text-blue-400 text-xs" title="이름/색상 변경">✏️</button>}
+                      </div>
                       <p className="text-xs text-gray-400">
-                        {pending.length>0
-                          ? <span className="text-orange-500 font-medium">남은 업무 {pending.length}건</span>
-                          : <span className="text-emerald-500 font-medium">✓ 모두 완료!</span>}
+                        {pending.length>0?<span className="text-orange-500 font-medium">남은 업무 {pending.length}건</span>:<span className="text-emerald-500 font-medium">✓ 모두 완료!</span>}
                         <span className="text-gray-300 mx-1">·</span>완료 {done}/{tasks.length}
                       </p>
                     </div>
@@ -726,23 +766,18 @@ function TeamView({prods, onRenameMember}) {
                 </div>
                 <MiniBar v={pct}/>
               </div>
-
-              {/* 미완료 태스크 */}
               {pending.length>0&&(
                 <div className="px-4 py-3 space-y-1.5 max-h-48 overflow-y-auto">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">🔴 미완료</p>
                   {pending.map(t=>{
-                    const today2 = new Date(); today2.setHours(0,0,0,0);
-                    const td = t.deadline ? Math.round((new Date(t.deadline)-today2)/86400000) : null;
-                    const tdLabel = td===null?null:td<0?`D+${Math.abs(td)}`:`D-${td}`;
-                    const tdColor = td===null?""
-                      :td<0?"bg-red-100 text-red-500"
-                      :td===0?"bg-red-50 text-red-500"
-                      :td<=3?"bg-orange-100 text-orange-600"
-                      :td<=7?"bg-amber-100 text-amber-600"
-                      :"bg-gray-100 text-gray-500";
+                    const today2=new Date(); today2.setHours(0,0,0,0);
+                    const td=t.deadline?Math.round((new Date(t.deadline)-today2)/86400000):null;
+                    const tdLabel=td===null?null:td<0?`D+${Math.abs(td)}`:`D-${td}`;
+                    const tdColor=td===null?""
+                      :td<0?"bg-red-100 text-red-500":td===0?"bg-red-50 text-red-500"
+                      :td<=3?"bg-orange-100 text-orange-600":td<=7?"bg-amber-100 text-amber-600":"bg-gray-100 text-gray-500";
                     return (
-                      <div key={t.id} className="flex items-start gap-2 group">
+                      <div key={t.id} className="flex items-start gap-2">
                         <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${gc(t.group).dot}`}/>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -756,8 +791,6 @@ function TeamView({prods, onRenameMember}) {
                   })}
                 </div>
               )}
-
-              {/* 완료 태스크 (접힌 상태) */}
               {completed.length>0&&(
                 <div className="px-4 pb-3 border-t border-gray-50">
                   <details className="group">
@@ -779,10 +812,7 @@ function TeamView({prods, onRenameMember}) {
                   </details>
                 </div>
               )}
-
-              {tasks.length===0&&(
-                <div className="px-4 py-6 text-center text-gray-400 text-xs">배정된 태스크가 없습니다</div>
-              )}
+              {tasks.length===0&&<div className="px-4 py-6 text-center text-gray-400 text-xs">배정된 태스크가 없습니다</div>}
             </div>
           );
         })}
@@ -791,48 +821,74 @@ function TeamView({prods, onRenameMember}) {
   );
 }
 
-/* ════════════════════════════════════════════════════════════
-   APP
-════════════════════════════════════════════════════════════ */
+/* ══ APP ══ */
 function App() {
-  const [prods,        setProds]        = useState(()=>getData()||INIT);
-  const [role,         setRole]         = useState("viewer");
-  const [members,      setMembers]      = useState(getMembers);
-  const [view,         setView]         = useState("products"); // "products" | "team"
-  const [filter,       setFilter]       = useState("전체");
-  const [search,       setSearch]       = useState("");
-  const [sort,         setSort]         = useState("default");
-  const [openId,       setOpenId]       = useState(null);
-  const [tabMap,       setTabMap]       = useState({});
-  const [showUnlock,   setShowUnlock]   = useState(false);
-  const [showChangePin,setShowChangePin]= useState(false);
-  const [dirty,        setDirty]        = useState(false);
-  const [saveFlash,    setSaveFlash]    = useState(false); // 저장됨 잠깐 표시
+  const [prods, setProds] = useState(()=>{
+    const saved = getData();
+    const shared = getSharedData();
+    const raw = saved || (shared?.prods) || INIT_RAW;
+    return raw.map(migrate);
+  });
+  const [role,         setRole]          = useState("viewer");
+  const [members,      setMembers]       = useState(()=>{ const shared=getSharedData(); return getMembers() || shared?.members || ["김민준","이서연","박지호"]; });
+  const [memberColors, setMemberColors]  = useState(()=>{ const shared=getSharedData(); return getMemberColors() || shared?.memberColors || {}; });
+  const [view,         setView]          = useState("products");
+  const [filter,       setFilter]        = useState("전체");
+  const [search,       setSearch]        = useState("");
+  const [sort,         setSort]          = useState("default");
+  const [openId,       setOpenId]        = useState(null);
+  const [tabMap,       setTabMap]        = useState({});
+  const [showUnlock,   setShowUnlock]    = useState(false);
+  const [showChangePin,setShowChangePin] = useState(false);
+  const [dirty,        setDirty]         = useState(false);
+  const [saveFlash,    setSaveFlash]     = useState(false);
 
   const upd     = (pid,fn) => { setProds(ps=>ps.map(p=>p.id===pid?fn(p):p)); setDirty(true); };
   const setF    = (pid,f,v) => upd(pid,p=>({...p,[f]:v}));
   const setRF   = (pid,f,v) => upd(pid,p=>({...p,reorder:p.reorder?{...p.reorder,[f]:v}:null}));
   const updTask = (pid,type,fn) => upd(pid,p=>({...p,[type]:fn(p[type])}));
-  const getTab  = id => tabMap[id]||"content";
+  const updGroupMeta = (pid,type,meta) => upd(pid,p=>({...p,[`${type}GroupMeta`]:meta}));
+  const getTab  = id => tabMap[id]||"planning";
   const setTab  = (id,t) => setTabMap(m=>({...m,[id]:t}));
 
-  // 팀원 이름 변경 시 모든 태스크의 assignee도 함께 업데이트
-  const renameMember = (oldName, newName) => {
-    setProds(ps => ps.map(p => ({
-      ...p,
-      ct: p.ct.map(t => t.assignee===oldName ? {...t, assignee:newName} : t),
-      mt: p.mt.map(t => t.assignee===oldName ? {...t, assignee:newName} : t),
-    })));
+  const moveProd = (idx, dir) => {
+    setProds(ps => {
+      const arr = [...ps];
+      const newIdx = idx + dir;
+      if(newIdx < 0 || newIdx >= arr.length) return ps;
+      [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
+      return arr;
+    });
+    setDirty(true);
+  };
+
+  const editMember = (oldName, newName, newColor) => {
+    const updatedMembers = members.map(x => x===oldName ? newName : x);
+    setMembers(updatedMembers); saveMembers(updatedMembers);
+    const updatedColors = {...memberColors, [newName]: newColor};
+    if(newName !== oldName) delete updatedColors[oldName];
+    setMemberColors(updatedColors); saveMemberColors(updatedColors);
+    if(newName !== oldName) {
+      setProds(ps => ps.map(p => ({
+        ...p,
+        pt: p.pt.map(t => t.assignee===oldName ? {...t, assignee:newName} : t),
+        ct: p.ct.map(t => t.assignee===oldName ? {...t, assignee:newName} : t),
+        mt: p.mt.map(t => t.assignee===oldName ? {...t, assignee:newName} : t),
+      })));
+    }
   };
 
   const addProd = () => {
     const np = {
       id:Date.now(), name:"새 제품", url:"", category:"미분류", status:"기획",
       ordered:false, qty:0, stock:0, deadline:"", memo:"", reorder:null,
+      image:null, price:0, cost:0, sku:"", description:"",
+      pt: mkDefaultPT("기획"),
       ct:[mkT('기획서 작성','상세페이지'),mkT('촬영','상세페이지'),mkT('편집','상세페이지'),mkT('등록 완료','상세페이지'),mkT('썸네일 촬영','썸네일'),mkT('썸네일 편집','썸네일'),mkT('패키지 디자인','패키지'),mkT('상품 설명 검수','검수')],
       mt:[mkT('광고 이미지 제작','광고 소재'),mkT('광고 영상 제작','광고 소재'),mkT('SNS 포스팅 초안','SNS'),mkT('릴스/쇼츠 제작','SNS'),mkT('인플루언서 섭외','바이럴'),mkT('리뷰 의뢰','바이럴'),mkT('키워드 광고 등록','광고 집행'),mkT('스마트스토어 최적화','광고 집행')],
+      groupMeta:{}, ptGroupMeta:{}, ctGroupMeta:{}, mtGroupMeta:{},
     };
-    setProds(ps=>[...ps,np]); setDirty(true); setOpenId(np.id); setTab(np.id,"info");
+    setProds(ps=>[...ps,np]); setDirty(true); setOpenId(np.id); setTab(np.id,"planning");
   };
   const delProd = pid => {
     if(window.confirm("이 제품을 삭제하시겠습니까?")) {
@@ -841,24 +897,56 @@ function App() {
     }
   };
 
-  // 저장 핸들러
   const handleSave = useCallback(() => {
-    saveData(prods);
-    setDirty(false);
-    setSaveFlash(true);
+    saveData(prods); setDirty(false); setSaveFlash(true);
     setTimeout(()=>setSaveFlash(false), 2000);
   }, [prods]);
 
-  // Ctrl+S 단축키
-  useEffect(()=>{
-    const handler = e => {
-      if((e.ctrlKey||e.metaKey) && e.key==="s") {
-        e.preventDefault();
-        handleSave();
-      }
+  // 공유용 파일 저장 - 현재 데이터를 HTML에 포함해서 다운로드
+  const handleSharedSave = () => {
+    const html = document.documentElement.outerHTML;
+    const dataStr = JSON.stringify({prods, members, memberColors});
+    const updated = html.replace(
+      /<script id="shared-data" type="application\/json">[\s\S]*?<\/script>/,
+      `<script id="shared-data" type="application/json">${dataStr}<\/script>`
+    );
+    const blob = new Blob([updated], {type:"text/html;charset=utf-8"});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href=url; a.download=`peston-shared-${new Date().toISOString().slice(0,10)}.html`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const handleExport = () => {
+    const data = { prods, members, memberColors, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data,null,2)], {type:"application/json"});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href=url; a.download=`peston-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const handleImport = e => {
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if(!data.prods){ alert("올바른 백업 파일이 아닙니다."); return; }
+        if(!window.confirm("현재 데이터를 백업 파일로 덮어쓰시겠습니까?")) return;
+        setProds(data.prods.map(migrate)); saveData(data.prods);
+        if(data.members){ setMembers(data.members); saveMembers(data.members); }
+        if(data.memberColors){ setMemberColors(data.memberColors); saveMemberColors(data.memberColors); }
+        setDirty(false); setSaveFlash(true); setTimeout(()=>setSaveFlash(false), 2000);
+      } catch { alert("파일을 읽을 수 없습니다."); }
     };
-    window.addEventListener("keydown", handler);
-    return ()=>window.removeEventListener("keydown", handler);
+    reader.readAsText(file); e.target.value="";
+  };
+
+  useEffect(()=>{
+    const handler = e => { if((e.ctrlKey||e.metaKey)&&e.key==="s"){ e.preventDefault(); handleSave(); }};
+    window.addEventListener("keydown",handler);
+    return ()=>window.removeEventListener("keydown",handler);
   }, [handleSave]);
 
   const kpi = useMemo(()=>({
@@ -868,7 +956,7 @@ function App() {
     waiting:    prods.filter(p=>p.status==="입고대기").length,
     reordering: prods.filter(p=>p.reorder).length,
     stock:      prods.reduce((s,p)=>s+p.stock,0),
-    urgent:     prods.filter(p=>{const d=dl(p.deadline);return d!==null&&d>=0&&d<=7;}).length,
+    urgent:     prods.filter(p=>{ const d=dl(p.deadline); return d!==null&&d>=0&&d<=7; }).length,
   }),[prods]);
 
   const rows = useMemo(()=>{
@@ -879,6 +967,7 @@ function App() {
     if(sort==="stock")    list.sort((a,b)=>b.stock-a.stock);
     if(sort==="deadline") list.sort((a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999"));
     if(sort==="pipeline") list.sort((a,b)=>si(b.status)-si(a.status));
+    if(sort==="pt")       list.sort((a,b)=>b.pt.filter(t=>t.done).length-a.pt.filter(t=>t.done).length);
     if(sort==="ct")       list.sort((a,b)=>b.ct.filter(t=>t.done).length-a.ct.filter(t=>t.done).length);
     if(sort==="mt")       list.sort((a,b)=>b.mt.filter(t=>t.done).length-a.mt.filter(t=>t.done).length);
     return list;
@@ -888,16 +977,15 @@ function App() {
 
   return (
     <RoleCtx.Provider value={role}>
-    <MembersCtx.Provider value={{ members, setMembers }}>
+    <MembersCtx.Provider value={{ members, setMembers, memberColors, setMemberColors }}>
     <div className="min-h-screen bg-slate-50 font-sans">
 
-      {/* ── MODALS ── */}
-      {showUnlock   && <UnlockModal onUnlock={()=>setRole("editor")} onClose={()=>setShowUnlock(false)}/>}
-      {showChangePin&& <ChangePinModal onClose={()=>setShowChangePin(false)}/>}
+      {showUnlock    && <UnlockModal onUnlock={()=>setRole("editor")} onClose={()=>setShowUnlock(false)}/>}
+      {showChangePin && <ChangePinModal onClose={()=>setShowChangePin(false)}/>}
 
       {/* ── HEADER ── */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
-        <div className="max-w-screen-xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
+        <div className="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 flex-shrink-0">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
               <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -908,7 +996,6 @@ function App() {
             <span className="text-sm text-gray-400 hidden md:inline">제품 런칭 대시보드</span>
           </div>
 
-          {/* 네비게이션 탭 */}
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
             <button onClick={()=>setView("products")}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${view==="products"?"bg-white text-gray-800 shadow-sm":"text-gray-500 hover:text-gray-700"}`}>
@@ -921,28 +1008,52 @@ function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* 저장 버튼 */}
-            <button onClick={handleSave}
-              title="저장 (Ctrl+S)"
+            {/* 백업 드롭다운 */}
+            <div className="relative group/backup">
+              <button className="text-sm px-2.5 py-1.5 rounded-lg flex items-center gap-1 border bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100 hover:text-gray-700 transition-all" title="백업 / 복원">
+                🗂️ <span className="hidden sm:inline text-xs">백업</span>
+                <span className="text-gray-400 text-xs">▾</span>
+              </button>
+              <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-lg py-1.5 w-52 hidden group-hover/backup:block">
+                <button onClick={handleExport}
+                  className="w-full text-left text-xs px-3.5 py-2 hover:bg-blue-50 flex items-center gap-2 text-gray-700 hover:text-blue-600">
+                  <span>📥</span>
+                  <div><p className="font-medium">백업 다운로드</p><p className="text-gray-400 text-xs">JSON 파일로 저장</p></div>
+                </button>
+                <label className="w-full text-left text-xs px-3.5 py-2 hover:bg-amber-50 flex items-center gap-2 text-gray-700 hover:text-amber-600 cursor-pointer">
+                  <span>📤</span>
+                  <div><p className="font-medium">백업에서 복원</p><p className="text-gray-400 text-xs">JSON 파일 불러오기</p></div>
+                  <input type="file" accept=".json" className="hidden" onChange={handleImport}/>
+                </label>
+                <div className="border-t border-gray-100 my-1"/>
+                <button onClick={handleSharedSave}
+                  className="w-full text-left text-xs px-3.5 py-2 hover:bg-emerald-50 flex items-center gap-2 text-gray-700 hover:text-emerald-600">
+                  <span>🔗</span>
+                  <div><p className="font-medium">공유용 파일 저장</p><p className="text-gray-400 text-xs">다른 사람도 볼 수 있는 HTML</p></div>
+                </button>
+              </div>
+            </div>
+
+            {/* 저장 */}
+            <button onClick={handleSave} title="저장 (Ctrl+S)"
               className={`text-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition-all border
                 ${saveFlash
                   ? "bg-emerald-500 text-white border-emerald-500 scale-95"
                   : dirty
                     ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-sm animate-pulse"
-                    : "bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100 hover:text-gray-600"
-                }`}>
-              {saveFlash ? "✓ 저장됨" : dirty ? "💾 저장" : "💾 저장"}
+                    : "bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100 hover:text-gray-600"}`}>
+              {saveFlash ? "✓ 저장됨" : "💾 저장"}
               {dirty&&!saveFlash&&<span className="w-1.5 h-1.5 rounded-full bg-white/80 inline-block ml-0.5"/>}
             </button>
 
-            {/* 권한 배지 & 잠금 버튼 */}
+            {/* 권한 */}
             {role==="editor"
               ?<div className="flex items-center gap-1.5">
                   <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-lg font-medium flex items-center gap-1">
                     <span>🔓</span> 편집자
                   </span>
                   <button onClick={()=>setShowChangePin(true)} className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-1 rounded hover:bg-gray-100" title="PIN 변경">🔑</button>
-                  <button onClick={()=>setRole("viewer")} className="text-xs text-gray-500 border border-gray-200 px-2 py-1 rounded-lg hover:bg-gray-50 hover:text-gray-700">잠금</button>
+                  <button onClick={()=>setRole("viewer")} className="text-xs text-gray-500 border border-gray-200 px-2 py-1 rounded-lg hover:bg-gray-50">잠금</button>
                 </div>
               :<button onClick={()=>setShowUnlock(true)}
                   className="text-xs bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600 px-3 py-1.5 rounded-lg border border-gray-200 flex items-center gap-1.5 transition-colors">
@@ -962,8 +1073,8 @@ function App() {
         </div>
       </header>
 
-      <div className="max-w-screen-xl mx-auto px-6 py-6 space-y-5">
-        {/* ── KPI ── */}
+      <div className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
+        {/* KPI */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
           <KPI icon="📦" label="전체 제품"  value={kpi.total}                         color="gray"    />
           <KPI icon="🛒" label="판매 중"    value={kpi.selling}                       color="emerald" />
@@ -974,7 +1085,6 @@ function App() {
           <KPI icon="⚡" label="D-7 임박"   value={kpi.urgent}                        color="red"     />
         </div>
 
-        {/* ════ 제품 현황 뷰 ════ */}
         {view==="products"&&(
           <>
           {/* 필터 바 */}
@@ -1004,32 +1114,49 @@ function App() {
               value={sort} onChange={e=>setSort(e.target.value)}>
               <option value="default">기본순</option><option value="pipeline">단계순</option>
               <option value="stock">재고 많은순</option><option value="deadline">마감일 빠른순</option>
+              <option value="pt">기획 진행순</option>
               <option value="ct">콘텐츠 진행순</option><option value="mt">마케팅 진행순</option>
             </select>
           </div>
 
-          {/* 테이블 */}
+          {/* 제품 테이블 */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            {/* 헤더 */}
             <div className="grid items-center bg-gray-50 border-b border-gray-200 px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide"
-              style={{gridTemplateColumns:"2.8fr 2fr 140px 1.6fr 1.6fr 90px 56px"}}>
+              style={{gridTemplateColumns:"52px 2.6fr 2fr 120px 1.3fr 1.3fr 1.3fr 80px 72px"}}>
+              <span></span>
               <span>제품</span><span>파이프라인</span><span>재고 현황</span>
-              <span>콘텐츠 제작</span><span>마케팅 준비</span><span>완료 예정</span><span/>
+              <span>기획단계</span><span>콘텐츠 제작</span><span>마케팅 준비</span>
+              <span>완료 예정</span><span></span>
             </div>
+
             {rows.length===0&&<div className="py-16 text-center text-gray-400 text-sm"><p className="text-3xl mb-2">🔍</p>조건에 맞는 제품이 없습니다.</div>}
+
             {rows.map((p,idx)=>{
+              // find index in prods array (not filtered rows) for reorder
+              const prodIdx = prods.findIndex(x=>x.id===p.id);
               const d=dl(p.deadline);
               const isOver=d!==null&&d<0&&p.status!=="판매중";
               const isUrg=d!==null&&d>=0&&d<=7;
               const exp=openId===p.id, tab=getTab(p.id);
+              const pDone=p.pt.filter(t=>t.done).length, pPct=p.pt.length>0?Math.round((pDone/p.pt.length)*100):0;
               const cDone=p.ct.filter(t=>t.done).length, cPct=p.ct.length>0?Math.round((cDone/p.ct.length)*100):0;
               const mDone=p.mt.filter(t=>t.done).length, mPct=p.mt.length>0?Math.round((mDone/p.mt.length)*100):0;
               return (
                 <div key={p.id} className={`border-b border-gray-100 last:border-0 ${isOver?"bg-red-50/60":isUrg?"bg-amber-50/40":idx%2===1?"bg-gray-50/40":"bg-white"}`}>
                   {/* 메인 행 */}
                   <div className="grid items-center px-5 py-3 cursor-pointer hover:bg-blue-50/20 transition-colors"
-                    style={{gridTemplateColumns:"2.8fr 2fr 140px 1.6fr 1.6fr 90px 56px"}}
+                    style={{gridTemplateColumns:"52px 2.6fr 2fr 120px 1.3fr 1.3fr 1.3fr 80px 72px"}}
                     onClick={()=>setOpenId(exp?null:p.id)}>
-                    <div className="pr-3 min-w-0">
+
+                    {/* 제품 이미지 */}
+                    <div onClick={e=>e.stopPropagation()}>
+                      <ProductImage image={p.image} name={p.name} size="sm"
+                        onChange={v=>setF(p.id,"image",v)}/>
+                    </div>
+
+                    {/* 제품명 */}
+                    <div className="px-2 min-w-0">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <Editable value={p.name} onChange={v=>setF(p.id,"name",v)} className="font-semibold text-gray-800 text-sm leading-snug" placeholder="제품명"/>
                         {p.url&&<a href={p.url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} className="text-blue-400 hover:text-blue-600 flex-shrink-0" title="제품 링크">
@@ -1041,7 +1168,11 @@ function App() {
                         {p.reorder&&<span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">🔄 재발주</span>}
                       </div>
                     </div>
+
+                    {/* 파이프라인 */}
                     <div className="pr-2"><PipelineBar status={p.status}/></div>
+
+                    {/* 재고 */}
                     <div>
                       <div className="flex items-baseline gap-1">
                         <span className={`text-xl font-bold tabular-nums leading-none ${p.stock===0?"text-gray-400":p.stock<100?"text-amber-600":"text-emerald-600"}`}>
@@ -1051,14 +1182,43 @@ function App() {
                       </div>
                       <ReorderBadge reorder={p.reorder}/>
                     </div>
-                    <div className="pr-3 space-y-1.5"><TaskDots tasks={p.ct}/><MiniBar v={cPct}/></div>
-                    <div className="pr-3 space-y-1.5"><TaskDots tasks={p.mt}/><MiniBar v={mPct}/></div>
+
+                    {/* 기획단계 */}
+                    <div className="pr-2 space-y-1.5">
+                      <TaskDots tasks={p.pt} groupMeta={p.ptGroupMeta||{}}/>
+                      <MiniBar v={pPct}/>
+                    </div>
+
+                    {/* 콘텐츠 제작 */}
+                    <div className="pr-2 space-y-1.5">
+                      <TaskDots tasks={p.ct} groupMeta={p.ctGroupMeta||{}}/>
+                      <MiniBar v={cPct}/>
+                    </div>
+
+                    {/* 마케팅 준비 */}
+                    <div className="pr-2 space-y-1.5">
+                      <TaskDots tasks={p.mt} groupMeta={p.mtGroupMeta||{}}/>
+                      <MiniBar v={mPct}/>
+                    </div>
+
+                    {/* 완료 예정일 */}
                     <div className="text-xs text-right pr-1">
-                      {p.deadline?<><p className={`font-medium ${isOver?"text-red-500":isUrg?"text-amber-600":"text-gray-600"}`}>{p.deadline}</p>
-                        {d!==null&&<p className={`mt-0.5 ${isOver?"text-red-400":isUrg?"text-amber-500":"text-gray-400"}`}>{isOver?`${Math.abs(d)}일 초과`:`D-${d}`}</p>}</>
+                      {p.deadline
+                        ?<><p className={`font-medium ${isOver?"text-red-500":isUrg?"text-amber-600":"text-gray-600"}`}>{p.deadline}</p>
+                          {d!==null&&<p className={`mt-0.5 ${isOver?"text-red-400":isUrg?"text-amber-500":"text-gray-400"}`}>{isOver?`${Math.abs(d)}일 초과`:`D-${d}`}</p>}</>
                         :<span className="text-gray-400">미정</span>}
                     </div>
-                    <div className="flex items-center justify-end gap-0.5">
+
+                    {/* 컨트롤 */}
+                    <div className="flex items-center justify-end gap-0.5" onClick={e=>e.stopPropagation()}>
+                      {role==="editor"&&(
+                        <div className="flex flex-col gap-0.5 mr-0.5">
+                          <button onClick={()=>moveProd(prodIdx,-1)} disabled={prodIdx===0}
+                            className={`text-gray-300 hover:text-blue-400 p-0.5 rounded text-xs leading-none ${prodIdx===0?"opacity-30 cursor-not-allowed":""}`} title="위로">▲</button>
+                          <button onClick={()=>moveProd(prodIdx,1)} disabled={prodIdx===prods.length-1}
+                            className={`text-gray-300 hover:text-blue-400 p-0.5 rounded text-xs leading-none ${prodIdx===prods.length-1?"opacity-30 cursor-not-allowed":""}`} title="아래로">▼</button>
+                        </div>
+                      )}
                       {role==="editor"&&<button onClick={e=>{e.stopPropagation();delProd(p.id);}} className="p-1 text-gray-300 hover:text-red-400 transition-colors rounded" title="제품 삭제">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                       </button>}
@@ -1071,12 +1231,13 @@ function App() {
                   {/* 확장 패널 */}
                   {exp&&(
                     <div className="border-t border-blue-100 bg-slate-50/80 px-5 py-4" onClick={e=>e.stopPropagation()}>
-                      <div className="flex gap-1 mb-4 border-b border-gray-200">
+                      <div className="flex gap-1 mb-4 border-b border-gray-200 flex-wrap">
                         {[
-                          {key:"content",  label:"🎨 콘텐츠 제작", badge:`${cDone}/${p.ct.length}`},
-                          {key:"marketing",label:"📣 마케팅 준비", badge:`${mDone}/${p.mt.length}`},
-                          {key:"reorder",  label:"🔄 재발주",      badge:p.reorder?p.reorder.status:"없음"},
-                          {key:"info",     label:"ℹ️ 제품 정보",  badge:""},
+                          {key:"planning",  label:"📋 기획단계",   badge:`${pDone}/${p.pt.length}`},
+                          {key:"content",   label:"🎨 콘텐츠 제작", badge:`${cDone}/${p.ct.length}`},
+                          {key:"marketing", label:"📣 마케팅 준비", badge:`${mDone}/${p.mt.length}`},
+                          {key:"reorder",   label:"🔄 재발주",      badge:p.reorder?p.reorder.status:"없음"},
+                          {key:"info",      label:"ℹ️ 제품 정보",  badge:""},
                         ].map(tb=>(
                           <button key={tb.key} onClick={()=>setTab(p.id,tb.key)}
                             className={`px-3 py-1.5 text-xs font-medium rounded-t-lg border-b-2 -mb-px transition-all
@@ -1085,8 +1246,11 @@ function App() {
                           </button>
                         ))}
                       </div>
-                      {tab==="content"&&<TaskPanel tasks={p.ct} onUpdate={fn=>updTask(p.id,"ct",fn)}/>}
-                      {tab==="marketing"&&<TaskPanel tasks={p.mt} onUpdate={fn=>updTask(p.id,"mt",fn)}/>}
+
+                      {tab==="planning"&&<TaskPanel tasks={p.pt} groupMeta={p.ptGroupMeta||{}} onUpdate={fn=>updTask(p.id,"pt",fn)} onUpdateGroupMeta={m=>updGroupMeta(p.id,"pt",m)}/>}
+                      {tab==="content"&&<TaskPanel tasks={p.ct} groupMeta={p.ctGroupMeta||{}} onUpdate={fn=>updTask(p.id,"ct",fn)} onUpdateGroupMeta={m=>updGroupMeta(p.id,"ct",m)}/>}
+                      {tab==="marketing"&&<TaskPanel tasks={p.mt} groupMeta={p.mtGroupMeta||{}} onUpdate={fn=>updTask(p.id,"mt",fn)} onUpdateGroupMeta={m=>updGroupMeta(p.id,"mt",m)}/>}
+
                       {tab==="reorder"&&(
                         <div>
                           {p.reorder
@@ -1120,26 +1284,95 @@ function App() {
                           }
                         </div>
                       )}
+
                       {tab==="info"&&(
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
-                          <div><p className="text-xs text-gray-500 mb-1">제품명 <span className="text-gray-400">(더블클릭 편집)</span></p><Editable value={p.name} onChange={v=>setF(p.id,"name",v)} className="text-sm font-semibold text-gray-800" placeholder="제품명"/></div>
-                          <div><p className="text-xs text-gray-500 mb-1">카테고리</p><Editable value={p.category} onChange={v=>setF(p.id,"category",v)} className="text-sm text-gray-700" placeholder="카테고리"/></div>
-                          <div>
-                            <p className="text-xs text-gray-500 mb-2">종합 상태</p>
-                            <select className="text-sm border border-gray-200 rounded-lg px-2 py-1 w-full focus:outline-none" disabled={role!=="editor"}
-                              value={p.status} onChange={e=>setF(p.id,"status",e.target.value)}>
-                              {STAGES.map(s=><option key={s}>{s}</option>)}
-                            </select>
+                        <div className="space-y-5">
+                          {/* 제품 이미지 섹션 */}
+                          <div className="bg-white rounded-xl border border-gray-100 p-4">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">제품 사진</p>
+                            <div className="flex items-start gap-4">
+                              <ProductImage image={p.image} name={p.name} size="lg"
+                                onChange={v=>setF(p.id,"image",v)}/>
+                              <div className="flex-1 text-xs text-gray-400 space-y-1 pt-1">
+                                <p>권장 이미지: 정방형 (1:1)</p>
+                                <p>클릭하여 사진을 추가하거나 변경하세요</p>
+                                {role!=="editor"&&<p className="text-amber-500">편집 모드에서만 사진을 변경할 수 있습니다</p>}
+                              </div>
+                            </div>
                           </div>
-                          <div className="sm:col-span-2">
-                            <p className="text-xs text-gray-500 mb-1">제품 링크 URL</p>
-                            <Editable value={p.url||""} onChange={v=>setF(p.id,"url",v)} className="text-sm text-blue-600 break-all" placeholder="https://..."/>
-                            {p.url&&<a href={p.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline mt-0.5 inline-flex items-center gap-0.5">링크 열기 ↗</a>}
+
+                          {/* 기본 정보 */}
+                          <div className="bg-white rounded-xl border border-gray-100 p-4">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">기본 정보</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                              <div><p className="text-xs text-gray-500 mb-1">제품명</p><Editable value={p.name} onChange={v=>setF(p.id,"name",v)} className="text-sm font-semibold text-gray-800" placeholder="제품명"/></div>
+                              <div><p className="text-xs text-gray-500 mb-1">카테고리</p><Editable value={p.category} onChange={v=>setF(p.id,"category",v)} className="text-sm text-gray-700" placeholder="카테고리"/></div>
+                              <div>
+                                <p className="text-xs text-gray-500 mb-2">진행 상태</p>
+                                <select className="text-sm border border-gray-200 rounded-lg px-2 py-1 w-full focus:outline-none" disabled={role!=="editor"}
+                                  value={p.status} onChange={e=>setF(p.id,"status",e.target.value)}>
+                                  {STAGES.map(s=><option key={s}>{s}</option>)}
+                                </select>
+                              </div>
+                              <div><p className="text-xs text-gray-500 mb-1">SKU / 모델번호</p><Editable value={p.sku||""} onChange={v=>setF(p.id,"sku",v)} className="text-sm text-gray-700 font-mono" placeholder="SKU-001"/></div>
+                              <div className="sm:col-span-2">
+                                <p className="text-xs text-gray-500 mb-1">제품 링크 URL</p>
+                                <Editable value={p.url||""} onChange={v=>setF(p.id,"url",v)} className="text-sm text-blue-600 break-all" placeholder="https://..."/>
+                                {p.url&&<a href={p.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline mt-0.5 inline-flex items-center gap-0.5">링크 열기 ↗</a>}
+                              </div>
+                            </div>
                           </div>
-                          <div><p className="text-xs text-gray-500 mb-1">완료 예정일</p><input type="date" className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-full focus:outline-none" disabled={role!=="editor"} value={p.deadline} onChange={e=>setF(p.id,"deadline",e.target.value)}/></div>
-                          <div><p className="text-xs text-gray-500 mb-1">발주 수량</p><p className="text-sm font-medium text-gray-700"><EditNum value={p.qty} min={0} max={99999} suffix="개" onChange={v=>setF(p.id,"qty",v)}/></p></div>
-                          <div><p className="text-xs text-gray-500 mb-1">현재 재고</p><p className="text-sm font-bold text-gray-700"><EditNum value={p.stock} min={0} max={99999} suffix="개" onChange={v=>setF(p.id,"stock",v)}/></p></div>
-                          <div className="sm:col-span-2 md:col-span-3"><p className="text-xs text-gray-500 mb-1">메모</p><Editable value={p.memo||""} onChange={v=>setF(p.id,"memo",v)} className="text-sm text-gray-600 leading-relaxed" placeholder="메모를 입력하세요..."/></div>
+
+                          {/* 상품 설명 */}
+                          <div className="bg-white rounded-xl border border-gray-100 p-4">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">상품 설명</p>
+                            <Editable value={p.description||""} onChange={v=>setF(p.id,"description",v)} className="text-sm text-gray-600 leading-relaxed w-full block" placeholder="상품 설명을 입력하세요... (주요 특징, 사용법 등)"/>
+                          </div>
+
+                          {/* 가격 & 재고 */}
+                          <div className="bg-white rounded-xl border border-gray-100 p-4">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">가격 & 재고</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-5">
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">판매가</p>
+                                <p className="text-sm font-bold text-blue-600"><EditNum value={p.price||0} min={0} max={9999999} suffix="원" onChange={v=>setF(p.id,"price",v)}/></p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">원가</p>
+                                <p className="text-sm font-bold text-gray-700"><EditNum value={p.cost||0} min={0} max={9999999} suffix="원" onChange={v=>setF(p.id,"cost",v)}/></p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">발주 수량</p>
+                                <p className="text-sm font-medium text-gray-700"><EditNum value={p.qty} min={0} max={99999} suffix="개" onChange={v=>setF(p.id,"qty",v)}/></p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">현재 재고</p>
+                                <p className="text-sm font-bold text-gray-700"><EditNum value={p.stock} min={0} max={99999} suffix="개" onChange={v=>setF(p.id,"stock",v)}/></p>
+                              </div>
+                            </div>
+                            {(p.price>0&&p.cost>0)&&(
+                              <div className="mt-3 pt-3 border-t border-gray-100 flex gap-6 text-xs">
+                                <span className="text-gray-500">마진: <span className="font-semibold text-emerald-600">{(p.price-p.cost).toLocaleString()}원</span></span>
+                                <span className="text-gray-500">마진율: <span className="font-semibold text-emerald-600">{Math.round(((p.price-p.cost)/p.price)*100)}%</span></span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 일정 & 메모 */}
+                          <div className="bg-white rounded-xl border border-gray-100 p-4">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">일정 & 메모</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">완료 예정일</p>
+                                <input type="date" className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-full focus:outline-none" disabled={role!=="editor"}
+                                  value={p.deadline} onChange={e=>setF(p.id,"deadline",e.target.value)}/>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">메모</p>
+                                <Editable value={p.memo||""} onChange={v=>setF(p.id,"memo",v)} className="text-sm text-gray-600 leading-relaxed" placeholder="메모를 입력하세요..."/>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1151,16 +1384,15 @@ function App() {
           </>
         )}
 
-        {/* ════ 팀 현황 뷰 ════ */}
-        {view==="team"&&<TeamView prods={prods} onRenameMember={renameMember}/>}
+        {view==="team"&&<TeamView prods={prods} onEditMember={editMember}/>}
 
-        {/* 하단 안내 */}
+        {/* 하단 도움말 */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-gray-400">
-            <div>💾 <span className="text-gray-600 font-medium">저장</span> → 우상단 저장 버튼 또는 Ctrl+S</div>
-            <div>📅 <span className="text-gray-600 font-medium">태스크 D-day</span> → 태스크 행에 마우스 올려 📅 클릭</div>
-            <div>👤 <span className="text-gray-600 font-medium">담당자 배정</span> → 태스크마다 팀원 지정</div>
-            <div>✏️ <span className="text-gray-600 font-medium">팀원 이름 변경</span> → 팀 현황 탭 ✏️ 클릭</div>
+            <div>💾 <span className="text-gray-600 font-medium">저장</span> → Ctrl+S 또는 저장 버튼</div>
+            <div>🔗 <span className="text-gray-600 font-medium">공유</span> → 백업 → 공유용 파일 저장</div>
+            <div>↑↓ <span className="text-gray-600 font-medium">제품 순서</span> → 편집모드에서 ▲▼ 버튼</div>
+            <div>✏️ <span className="text-gray-600 font-medium">그룹 편집</span> → 태스크 그룹 배지의 ✏️ 클릭</div>
           </div>
         </div>
       </div>
