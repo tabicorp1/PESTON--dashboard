@@ -1019,7 +1019,7 @@ function App() {
     if(!window.FIREBASE_OK || !window.CLOUD_REF){ setSyncStatus("오프라인"); return; }
     const unsub = window.CLOUD_REF.onSnapshot(
       doc => {
-        if(doc.exists()){
+        if(doc.exists){
           const data = doc.data();
           if(!dirtyRef.current){
             if(data.prods)        setProds(data.prods.map(migrate));
@@ -1028,6 +1028,7 @@ function App() {
           }
           setSyncStatus("동기화됨");
         } else {
+          // 문서 없음 - 첫 사용
           setSyncStatus("동기화됨");
         }
       },
