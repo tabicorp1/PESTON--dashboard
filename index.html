@@ -669,12 +669,20 @@ function TaskPanel({tasks, groupMeta={}, onUpdate, onUpdateGroupMeta}) {
 }
 
 /* ══ KPI ══ */
-function KPI({icon,label,value,color}) {
+function KPI({icon,label,value,color,onClick,active}) {
   const C={gray:"bg-gray-100",blue:"bg-blue-50",emerald:"bg-emerald-50",amber:"bg-amber-50",indigo:"bg-indigo-50",red:"bg-red-50",purple:"bg-purple-50"};
+  const BD={gray:"border-gray-400",blue:"border-blue-400",emerald:"border-emerald-400",amber:"border-amber-400",indigo:"border-indigo-400",red:"border-red-400",purple:"border-purple-400"};
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 flex items-center gap-3">
+    <div onClick={onClick}
+      className={`bg-white rounded-xl border shadow-sm px-4 py-3 flex items-center gap-3 transition-all
+        ${onClick?"cursor-pointer hover:shadow-md hover:-translate-y-0.5":""}
+        ${active?`${BD[color]||"border-gray-400"} border-2 shadow-md`:"border-gray-200"}`}>
       <div className={`w-9 h-9 rounded-lg ${C[color]||"bg-gray-100"} flex items-center justify-center text-base flex-shrink-0`}>{icon}</div>
-      <div><p className="text-lg font-bold text-gray-800 leading-tight">{value}</p><p className="text-xs text-gray-500">{label}</p></div>
+      <div>
+        <p className={`text-lg font-bold leading-tight ${active?"text-gray-900":"text-gray-800"}`}>{value}</p>
+        <p className="text-xs text-gray-500">{label}</p>
+      </div>
+      {active&&<span className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${BD[color]?.replace("border-","bg-")||"bg-gray-400"}`}/>}
     </div>
   );
 }
@@ -1049,8 +1057,9 @@ function App() {
 
   const rows = useMemo(()=>{
     let list=[...prods];
-    if(filter!=="전체"&&filter!=="재발주중") list=list.filter(p=>p.status===filter);
     if(filter==="재발주중") list=list.filter(p=>p.reorder);
+    else if(filter==="urgent") list=list.filter(p=>{ const d=dl(p.deadline); return d!==null&&d>=0&&d<=7; });
+    else if(filter!=="전체") list=list.filter(p=>p.status===filter);
     if(search.trim()) list=list.filter(p=>p.name.includes(search.trim()));
     if(sort==="stock")    list.sort((a,b)=>b.stock-a.stock);
     if(sort==="deadline") list.sort((a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999"));
@@ -1183,13 +1192,13 @@ function App() {
       <div className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
         {/* KPI */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-          <KPI icon="📦" label="전체 제품"  value={kpi.total}                         color="gray"    />
-          <KPI icon="🛒" label="판매 중"    value={kpi.selling}                       color="emerald" />
-          <KPI icon="🏭" label="생산 중"    value={kpi.producing}                     color="blue"    />
-          <KPI icon="📬" label="입고 대기"  value={kpi.waiting}                       color="amber"   />
-          <KPI icon="🔄" label="재발주 중"  value={kpi.reordering}                    color="indigo"  />
+          <KPI icon="📦" label="전체 제품"  value={kpi.total}                         color="gray"    active={filter==="전체"&&view==="products"}    onClick={()=>{setFilter("전체");setView("products");}} />
+          <KPI icon="🛒" label="판매 중"    value={kpi.selling}                       color="emerald" active={filter==="판매중"&&view==="products"}   onClick={()=>{setFilter("판매중");setView("products");}} />
+          <KPI icon="🏭" label="생산 중"    value={kpi.producing}                     color="blue"    active={filter==="생산중"&&view==="products"}   onClick={()=>{setFilter("생산중");setView("products");}} />
+          <KPI icon="📬" label="입고 대기"  value={kpi.waiting}                       color="amber"   active={filter==="입고대기"&&view==="products"} onClick={()=>{setFilter("입고대기");setView("products");}} />
+          <KPI icon="🔄" label="재발주 중"  value={kpi.reordering}                    color="indigo"  active={filter==="재발주중"&&view==="products"} onClick={()=>{setFilter("재발주중");setView("products");}} />
           <KPI icon="🗃️" label="총 재고"    value={`${kpi.stock.toLocaleString()}개`} color="purple"  />
-          <KPI icon="⚡" label="D-7 임박"   value={kpi.urgent}                        color="red"     />
+          <KPI icon="⚡" label="D-7 임박"   value={kpi.urgent}                        color="red"     active={filter==="urgent"&&view==="products"}   onClick={()=>{setFilter("urgent");setView("products");}} />
         </div>
 
         {view==="products"&&(
